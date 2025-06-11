@@ -346,7 +346,7 @@ const WeatherComponent: React.FC = () => {
               <tbody>
                 {daily.time.map((t, i) => (
                   <tr key={t} className="odd:bg-white even:bg-gray-50">
-                    <td className="py-2 px-4 border">{t}ttt</td>
+                    <td className="py-2 px-4 border">{t}</td>
                     <td className="py-2 px-4 border">{daily.weathercode[i]}</td>
                     <td className="py-2 px-4 border">{daily.temperature_2m_min[i]}°C</td>
                     <td className="py-2 px-4 border">{daily.temperature_2m_max[i]}°C</td>
