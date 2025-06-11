@@ -1,39 +1,34 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Cloud, Sun, CloudRain, CloudSnow, Wind, Thermometer, Droplets, Eye, Gauge } from 'lucide-react';
+import React, { useEffect, useState, useRef } from "react";
 
-interface WeatherData {
-  location: {
-    name: string;
-    region: string;
-    country: string;
-    localtime: string;
-  };
-  current: {
-    temp_c: number;
-    temp_f: number;
-    condition: {
-      text: string;
-      icon: string;
-      code: number;
-    };
-    wind_kph: number;
-    wind_mph: number;
-    wind_dir: string;
-    pressure_mb: number;
-    pressure_in: number;
-    precip_mm: number;
-    precip_in: number;
-    humidity: number;
-    cloud: number;
-    feelslike_c: number;
-    feelslike_f: number;
-    vis_km: number;
-    vis_miles: number;
-    uv: number;
-  };
+interface CurrentWeather {
+  temperature: number;
+  windspeed: number;
+  winddirection: number;
+  weathercode: number;
+  time: string;
+  relativehumidity: number;
+  pressure: number;
 }
 
-interface LocationSuggestion {
+interface DailyForecast {
+  time: string[];
+  weathercode: number[];
+  temperature_2m_max: number[];
+  temperature_2m_min: number[];
+  precipitation_sum: number[];
+}
+
+interface HourlyData {
+  time: string[];
+  temperature_2m: number[];
+  relative_humidity_2m: number[];
+  windspeed_10m: number[];
+  precipitation: number[];
+  shortwave_radiation: number[];
+  cloudcover: number[];
+}
+
+interface Location {
   id: number;
   name: string;
   region: string;
@@ -42,18 +37,7 @@ interface LocationSuggestion {
   lon: number;
 }
 
-function App() {
-  const [query, setQuery] = useState<string>('');
-  const [weather, setWeather] = useState<WeatherData | null>(null);
-  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string>('');
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [isCelsius, setIsCelsius] = useState(true);
-
-  
-  // Mock locations database
-  const mockLocations: LocationSuggestion[] = [
+const locations: Location[] = [
     { id: 1, name: 'London', region: 'England', country: 'United Kingdom', lat: 51.52, lon: -0.11 },
     { id: 2, name: 'New York', region: 'New York', country: 'United States', lat: 40.71, lon: -74.01 },
     { id: 3, name: 'Tokyo', region: 'Tokyo', country: 'Japan', lat: 35.69, lon: 139.69 },
@@ -156,342 +140,251 @@ function App() {
     { id: 100, name: 'Zaragoza', region: 'Aragon', country: 'Spain', lat: 41.65, lon: -0.89 },
     { id: 101, name: 'Bilbao', region: 'Basque Country', country: 'Spain', lat: 43.26, lon: -2.94 }
 ];
-  // Debounced search for location suggestions
+
+
+const OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast";
+
+const SearchableLocationSelector: React.FC<{
+  locations: Location[];
+  selectedLocation: Location | null;
+  onSelect: (location: Location) => void;
+}> = ({ locations, selectedLocation, onSelect }) => {
+  const [query, setQuery] = useState("");
+  const [filtered, setFiltered] = useState<Location[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (query.length > 1) {
-        searchLocations(query);
-      } else {
-        setSuggestions([]);
+    const handleClickOutside = (event: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
         setShowSuggestions(false);
       }
-    }, 300);
-
-    return () => clearTimeout(timeoutId);
-  }, [query]);
-
-  const searchLocations = (searchQuery: string) => {
-    const filteredLocations = mockLocations.filter(location => 
-      location.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      location.region.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      location.country.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-
-    setSuggestions(filteredLocations.slice(0, 8));
-    setShowSuggestions(filteredLocations.length > 0);
-  };
-
-  const generateMockWeather = (locationName: string): WeatherData => {
-    const conditions = [
-      { text: 'Sunny', temp: 25 },
-      { text: 'Partly cloudy', temp: 20 },
-      { text: 'Cloudy', temp: 15 },
-      { text: 'Light rain', temp: 12 },
-      { text: 'Clear', temp: 22 },
-      { text: 'Overcast', temp: 16 },
-      { text: 'Light snow', temp: -2 },
-      { text: 'Fog', temp: 8 }
-    ];
-
-    const randomCondition = conditions[Math.floor(Math.random() * conditions.length)];
-    const tempC = randomCondition.temp + Math.floor(Math.random() * 10) - 5;
-    const tempF = Math.round(tempC * 9/5 + 32);
-    const windKph = Math.floor(Math.random() * 25) + 5;
-    const windMph = Math.round(windKph * 0.621371);
-    const pressureMb = Math.floor(Math.random() * 50) + 1000;
-    const pressureIn = Math.round(pressureMb * 0.02953 * 100) / 100;
-    const precipMm = Math.floor(Math.random() * 15);
-    const precipIn = Math.round(precipMm * 0.0393701 * 100) / 100;
-    const humidity = Math.floor(Math.random() * 40) + 40;
-    const cloud = Math.floor(Math.random() * 100);
-    const feelslikeC = tempC + Math.floor(Math.random() * 6) - 3;
-    const feelslikeF = Math.round(feelslikeC * 9/5 + 32);
-    const visKm = Math.floor(Math.random() * 20) + 5;
-    const visMiles = Math.round(visKm * 0.621371);
-    const uv = Math.floor(Math.random() * 10) + 1;
-
-    return {
-      location: {
-        name: locationName,
-        region: 'Demo Region',
-        country: 'Demo Country',
-        localtime: new Date().toLocaleString()
-      },
-      current: {
-        temp_c: tempC,
-        temp_f: tempF,
-        condition: {
-          text: randomCondition.text,
-          icon: '//cdn.weatherapi.com/weather/64x64/day/116.png',
-          code: 1000
-        },
-        wind_kph: windKph,
-        wind_mph: windMph,
-        wind_dir: ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.floor(Math.random() * 8)],
-        pressure_mb: pressureMb,
-        pressure_in: pressureIn,
-        precip_mm: precipMm,
-        precip_in: precipIn,
-        humidity: humidity,
-        cloud: cloud,
-        feelslike_c: feelslikeC,
-        feelslike_f: feelslikeF,
-        vis_km: visKm,
-        vis_miles: visMiles,
-        uv: uv
-      }
     };
-  };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
-  const fetchWeather = async (location: string) => {
-    setLoading(true);
-    setError('');
-    
-    try {
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const locationName = location.split(',')[0] || location;
-      const mockWeatherData = generateMockWeather(locationName);
-      
-      setWeather(mockWeatherData);
-    } catch (err) {
-      setError('Failed to fetch weather data. Please try again.');
-      console.error('Error fetching weather:', err);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (query.trim() === "") {
+      setFiltered([]);
+      return;
     }
+    const q = query.toLowerCase();
+    const results = locations.filter(
+      loc =>
+        loc.name.toLowerCase().includes(q) ||
+        loc.region.toLowerCase().includes(q) ||
+        loc.country.toLowerCase().includes(q)
+    );
+    setFiltered(results);
+  }, [query, locations]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setQuery(e.target.value);
+    setShowSuggestions(true);
   };
 
-  const handleLocationSelect = (location: LocationSuggestion) => {
-    const locationString = `${location.name}, ${location.region}, ${location.country}`;
-    setQuery(locationString);
+  const handleSelect = (loc: Location) => {
+    onSelect(loc);
+    setQuery(loc.name);
     setShowSuggestions(false);
-    fetchWeather(location.name);
-  };
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (query.trim()) {
-      setShowSuggestions(false);
-      fetchWeather(query.trim());
-    }
-  };
-
-  const getWeatherIcon = (condition: string) => {
-    const lowerCondition = condition.toLowerCase();
-    if (lowerCondition.includes('sunny') || lowerCondition.includes('clear')) {
-      return <Sun className="w-8 h-8 text-yellow-400" />;
-    } else if (lowerCondition.includes('rain')) {
-      return <CloudRain className="w-8 h-8 text-blue-400" />;
-    } else if (lowerCondition.includes('snow')) {
-      return <CloudSnow className="w-8 h-8 text-blue-300" />;
-    } else if (lowerCondition.includes('cloud') || lowerCondition.includes('overcast')) {
-      return <Cloud className="w-8 h-8 text-gray-400" />;
-    } else {
-      return <Sun className="w-8 h-8 text-yellow-400" />;
-    }
-  };
-
-  const formatTemperature = (tempC: number, tempF: number) => {
-    return isCelsius ? `${tempC}°C` : `${tempF}°F`;
-  };
-
-  const formatWind = (kph: number, mph: number) => {
-    return isCelsius ? `${kph} km/h` : `${mph} mph`;
-  };
-
-  const formatPressure = (mb: number, inches: number) => {
-    return isCelsius ? `${mb} mb` : `${inches} in`;
-  };
-
-  const formatVisibility = (km: number, miles: number) => {
-    return isCelsius ? `${km} km` : `${miles} mi`;
-  };
-
-  const formatPrecipitation = (mm: number, inches: number) => {
-    return isCelsius ? `${mm} mm` : `${inches} in`;
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-400 via-blue-500 to-blue-600 p-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-8 pt-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-white/20 backdrop-blur-sm rounded-full mb-4">
-            <Cloud className="w-10 h-10 text-white" />
-          </div>
-          <h1 className="text-4xl font-bold text-white mb-2">Global Weather</h1>
-          <p className="text-blue-100 text-lg">Current weather conditions worldwide</p>
-        </div>
+    <div ref={wrapperRef} className="w-full max-w-md relative mx-auto mb-6">
+      <input
+        type="text"
+        value={query}
+        onChange={handleInputChange}
+        onFocus={() => setShowSuggestions(true)}
+        placeholder="Busca ciudad, región o país"
+        className="w-full p-2 border rounded-lg text-lg"
+        aria-label="Buscar ubicación"
+        autoComplete="off"
+      />
+      {showSuggestions && filtered.length > 0 && (
+        <ul className="absolute z-10 w-full max-h-48 overflow-auto bg-white border border-gray-300 rounded-b-lg shadow-md">
+          {filtered.map(loc => (
+            <li
+              key={loc.id}
+              onClick={() => handleSelect(loc)}
+              className="cursor-pointer px-4 py-2 hover:bg-blue-100"
+              role="option"
+              aria-selected={selectedLocation?.id === loc.id}
+              tabIndex={0}
+              onKeyDown={e => {
+                if (e.key === "Enter" || e.key === " ") {
+                  handleSelect(loc);
+                }
+              }}
+            >
+              {loc.name}, {loc.region} ({loc.country})
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
 
-        {/* Search Section */}
-        <div className="relative mb-8">
-          <form onSubmit={handleSearch} className="relative">
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                placeholder="Search for any city, state, or country..."
-                className="w-full pl-12 pr-4 py-4 bg-white/95 backdrop-blur-sm rounded-2xl border-0 focus:ring-4 focus:ring-white/30 focus:outline-none text-gray-800 placeholder-gray-500 text-lg shadow-xl"
-              />
-            </div>
-            
-            {/* Suggestions Dropdown */}
-            {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white/95 backdrop-blur-sm rounded-xl shadow-2xl border border-white/20 z-10 max-h-60 overflow-y-auto">
-                {suggestions.map((location) => (
-                  <button
-                    key={location.id}
-                    type="button"
-                    onClick={() => handleLocationSelect(location)}
-                    className="w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors duration-200 border-b border-gray-100 last:border-b-0 first:rounded-t-xl last:rounded-b-xl"
-                  >
-                    <div className="font-medium text-gray-800">{location.name}</div>
-                    <div className="text-sm text-gray-600">{location.region}, {location.country}</div>
-                  </button>
+const WeatherComponent: React.FC = () => {
+  const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
+  const [current, setCurrent] = useState<CurrentWeather | null>(null);
+  const [daily, setDaily] = useState<DailyForecast | null>(null);
+  const [hourly, setHourly] = useState<HourlyData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedLocation) return;
+
+    const fetchWeather = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const url = `${OPEN_METEO_URL}?latitude=${selectedLocation.lat}&longitude=${selectedLocation.lon}&current_weather=true&hourly=temperature_2m,relative_humidity_2m,windspeed_10m,precipitation,shortwave_radiation,cloudcover&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Europe/Madrid`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Error al cargar datos del clima.");
+        const data = await res.json();
+
+        setCurrent({
+          temperature: data.current_weather.temperature,
+          windspeed: data.current_weather.windspeed,
+          winddirection: data.current_weather.winddirection,
+          weathercode: data.current_weather.weathercode,
+          time: data.current_weather.time,
+          relativehumidity: data.hourly.relative_humidity_2m[0],
+          pressure: data.hourly.pressure_msl ? data.hourly.pressure_msl[0] : 0,
+        });
+
+        setDaily({
+          time: data.daily.time,
+          weathercode: data.daily.weathercode,
+          temperature_2m_max: data.daily.temperature_2m_max,
+          temperature_2m_min: data.daily.temperature_2m_min,
+          precipitation_sum: data.daily.precipitation_sum,
+        });
+
+        setHourly({
+          time: data.hourly.time,
+          temperature_2m: data.hourly.temperature_2m,
+          relative_humidity_2m: data.hourly.relative_humidity_2m,
+          windspeed_10m: data.hourly.windspeed_10m,
+          precipitation: data.hourly.precipitation,
+          shortwave_radiation: data.hourly.shortwave_radiation,
+          cloudcover: data.hourly.cloudcover,
+        });
+      } catch (err) {
+        console.error(err);
+        setError("Ocurrió un error obteniendo el clima.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchWeather();
+  }, [selectedLocation]);
+
+  return (
+    <div className="max-w-2xl mx-auto p-4 font-sans space-y-8 bg-white shadow-lg rounded-2xl">
+      <h2 className="text-3xl font-bold text-center text-blue-700 mb-4">
+        Clima por ciudad
+      </h2>
+
+      <SearchableLocationSelector
+        locations={locations}
+        selectedLocation={selectedLocation}
+        onSelect={setSelectedLocation}
+      />
+
+      {loading && <div className="text-center text-gray-600 p-4">Cargando clima...</div>}
+      {error && <div className="text-center text-red-500 p-4">{error}</div>}
+
+      {current && (
+        <div className="grid grid-cols-2 gap-4 text-lg">
+          <div className="flex flex-col items-center p-4 bg-blue-50 rounded-xl shadow">
+            <span className="text-gray-500">🕒 Hora</span>
+            <span className="font-semibold">{current.time}</span>
+          </div>
+          <div className="flex flex-col items-center p-4 bg-blue-50 rounded-xl shadow">
+            <span className="text-gray-500">🌡 Temperatura</span>
+            <span className="font-semibold">{current.temperature} °C</span>
+          </div>
+          <div className="flex flex-col items-center p-4 bg-blue-50 rounded-xl shadow">
+            <span className="text-gray-500">💨 Viento</span>
+            <span className="font-semibold">{current.windspeed} km/h</span>
+          </div>
+          <div className="flex flex-col items-center p-4 bg-blue-50 rounded-xl shadow">
+            <span className="text-gray-500">📍 Dirección del viento</span>
+            <span className="font-semibold">{current.winddirection}°</span>
+          </div>
+          <div className="flex flex-col items-center p-4 bg-blue-50 rounded-xl shadow">
+            <span className="text-gray-500">💧 Humedad</span>
+            <span className="font-semibold">{current.relativehumidity}%</span>
+          </div>
+          <div className="flex flex-col items-center p-4 bg-blue-50 rounded-xl shadow">
+            <span className="text-gray-500">🧭 Presión</span>
+            <span className="font-semibold">{current.pressure} hPa</span>
+          </div>
+        </div>
+      )}
+
+      {daily && (
+        <>
+          <h3 className="text-2xl font-semibold text-blue-600 mb-2">Pronóstico diario</h3>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-center border border-gray-300">
+              <thead className="bg-blue-100">
+                <tr>
+                  <th className="py-2 px-4 border">Fecha</th>
+                  <th className="py-2 px-4 border">Codigo de clima</th>
+                  <th className="py-2 px-4 border">Mín</th>
+                  <th className="py-2 px-4 border">Máx</th>
+                  <th className="py-2 px-4 border">Precipitación</th>
+                </tr>
+              </thead>
+              <tbody>
+                {daily.time.map((t, i) => (
+                  <tr key={t} className="odd:bg-white even:bg-gray-50">
+                    <td className="py-2 px-4 border">{t}</td>
+                    <td className="py-2 px-4 border">{daily.weathercode[i]}</td>
+                    <td className="py-2 px-4 border">{daily.temperature_2m_min[i]}°C</td>
+                    <td className="py-2 px-4 border">{daily.temperature_2m_max[i]}°C</td>
+                    <td className="py-2 px-4 border">{daily.precipitation_sum[i]} mm</td>
+                  </tr>
                 ))}
-              </div>
-            )}
-          </form>
-        </div>
-
-        {/* Loading State */}
-        {loading && (
-          <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent"></div>
-            <p className="text-white mt-4 text-lg">Loading weather data...</p>
+              </tbody>
+            </table>
           </div>
-        )}
+        </>
+      )}
 
-        {/* Error State */}
-        {error && (
-          <div className="bg-red-500/20 backdrop-blur-sm border border-red-300 rounded-xl p-6 mb-8">
-            <p className="text-white text-center">{error}</p>
-          </div>
-        )}
+      {hourly && (
+        <>
+          <h3 className="text-2xl font-semibold text-blue-600 mb-2">Datos horarios</h3>
+          <ul className="space-y-2 max-h-64 overflow-y-auto">
+            {hourly.time.slice(0, 12).map((t, i) => (
+              <li key={t} className="flex flex-col md:flex-row justify-between p-3 bg-gray-100 rounded-lg shadow">
+                <span className="font-semibold">{t.slice(11)}</span>
+                <span className="text-gray-600">Temp: {hourly.temperature_2m[i]}°C</span>
+                <span className="text-gray-600">Humedad: {hourly.relative_humidity_2m[i]}%</span>
+                <span className="text-gray-600">Viento: {hourly.windspeed_10m[i]} km/h</span>
+                <span className="text-gray-600">Lluvia: {hourly.precipitation[i]} mm</span>
+                <span className="text-gray-600">Radiación: {hourly.shortwave_radiation[i]} W/m²</span>
+                <span className="text-gray-600">Nubes: {hourly.cloudcover[i]}%</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
-        {/* Weather Display */}
-        {weather && !loading && (
-          <div className="space-y-6">
-            {/* Main Weather Card */}
-            <div className="bg-white/10 backdrop-blur-md rounded-3xl p-8 shadow-2xl border border-white/20">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-3xl font-bold text-white mb-1">{weather.location.name}</h2>
-                  <p className="text-blue-100 text-lg">{weather.location.region}, {weather.location.country}</p>
-                  <p className="text-blue-200 text-sm mt-1">Local time: {weather.location.localtime}</p>
-                </div>
-                <button
-                  onClick={() => setIsCelsius(!isCelsius)}
-                  className="bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-full px-4 py-2 text-white font-medium transition-all duration-200"
-                >
-                  {isCelsius ? '°C' : '°F'}
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-6">
-                  {getWeatherIcon(weather.current.condition.text)}
-                  <div>
-                    <div className="text-6xl font-bold text-white mb-2">
-                      {formatTemperature(weather.current.temp_c, weather.current.temp_f)}
-                    </div>
-                    <p className="text-blue-100 text-xl">{weather.current.condition.text}</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-blue-100 text-lg">Feels like</p>
-                  <p className="text-white text-2xl font-semibold">
-                    {formatTemperature(weather.current.feelslike_c, weather.current.feelslike_f)}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Weather Details Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 shadow-xl border border-white/20">
-                <div className="flex items-center space-x-3 mb-3">
-                  <Wind className="w-6 h-6 text-blue-200" />
-                  <span className="text-blue-100 font-medium">Wind</span>
-                </div>
-                <p className="text-white text-2xl font-bold">{formatWind(weather.current.wind_kph, weather.current.wind_mph)}</p>
-                <p className="text-blue-200 text-sm">{weather.current.wind_dir}</p>
-              </div>
-
-              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 shadow-xl border border-white/20">
-                <div className="flex items-center space-x-3 mb-3">
-                  <Droplets className="w-6 h-6 text-blue-200" />
-                  <span className="text-blue-100 font-medium">Humidity</span>
-                </div>
-                <p className="text-white text-2xl font-bold">{weather.current.humidity}%</p>
-              </div>
-
-              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 shadow-xl border border-white/20">
-                <div className="flex items-center space-x-3 mb-3">
-                  <Gauge className="w-6 h-6 text-blue-200" />
-                  <span className="text-blue-100 font-medium">Pressure</span>
-                </div>
-                <p className="text-white text-2xl font-bold">{formatPressure(weather.current.pressure_mb, weather.current.pressure_in)}</p>
-              </div>
-
-              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 shadow-xl border border-white/20">
-                <div className="flex items-center space-x-3 mb-3">
-                  <Eye className="w-6 h-6 text-blue-200" />
-                  <span className="text-blue-100 font-medium">Visibility</span>
-                </div>
-                <p className="text-white text-2xl font-bold">{formatVisibility(weather.current.vis_km, weather.current.vis_miles)}</p>
-              </div>
-
-              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 shadow-xl border border-white/20">
-                <div className="flex items-center space-x-3 mb-3">
-                  <Cloud className="w-6 h-6 text-blue-200" />
-                  <span className="text-blue-100 font-medium">Cloud Cover</span>
-                </div>
-                <p className="text-white text-2xl font-bold">{weather.current.cloud}%</p>
-              </div>
-
-              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 shadow-xl border border-white/20">
-                <div className="flex items-center space-x-3 mb-3">
-                  <Sun className="w-6 h-6 text-blue-200" />
-                  <span className="text-blue-100 font-medium">UV Index</span>
-                </div>
-                <p className="text-white text-2xl font-bold">{weather.current.uv}</p>
-              </div>
-
-              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 shadow-xl border border-white/20 md:col-span-2">
-                <div className="flex items-center space-x-3 mb-3">
-                  <CloudRain className="w-6 h-6 text-blue-200" />
-                  <span className="text-blue-100 font-medium">Precipitation</span>
-                </div>
-                <p className="text-white text-2xl font-bold">
-                  {formatPrecipitation(weather.current.precip_mm, weather.current.precip_in)}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Initial State */}
-        {!weather && !loading && !error && (
-          <div className="text-center py-16">
-            <div className="inline-flex items-center justify-center w-24 h-24 bg-white/10 backdrop-blur-sm rounded-full mb-6">
-              <Search className="w-12 h-12 text-white" />
-            </div>
-            <h3 className="text-2xl font-bold text-white mb-4">Search for Weather</h3>
-            <p className="text-blue-100 text-lg max-w-md mx-auto">
-              Enter any city, state, or country name to get current weather conditions and detailed meteorological data.
-            </p>
-          </div>
-        )}
+      <div className="mt-6 text-sm text-gray-500">
+        <p><strong>Datos actuales:</strong> Temperatura a 2 m, Velocidad del viento a 10 m, Humedad relativa a 2 m, Presión atmosférica, Dirección del viento.</p>
+        <p><strong>Datos horarios:</strong> Temperatura a 2 m, Humedad relativa a 2 m, Velocidad del viento a 10 m, Precipitación acumulada, Radiación solar, Cobertura de nubes.</p>
+        <p className="text-center mt-4">Datos proporcionados por <a href="https://open-meteo.com/" className="text-blue-500 underline" target="_blank" rel="noopener noreferrer">open-meteo.com</a></p>
       </div>
     </div>
   );
-}
+};
 
-export default App;
+export default WeatherComponent;
